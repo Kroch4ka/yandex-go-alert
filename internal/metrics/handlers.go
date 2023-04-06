@@ -27,7 +27,7 @@ func UpdateHandler(res http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		http.Error(res, "unexpected method", http.StatusMethodNotAllowed)
 	}
-	URLParts := make([]string, 3, 3)
+	URLParts := make([]string, 3)
 	k := 0
 	for _, el := range strings.Split(req.RequestURI, "/") {
 		if el != "" && el != "update" {
