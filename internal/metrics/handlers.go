@@ -2,39 +2,44 @@ package metrics
 
 import (
 	"errors"
-	"fmt"
+	"github.com/Kroch4ka/yandex-go-alert/internal/util"
 	"net/http"
-	"regexp"
 	"strconv"
+	"strings"
 )
 
-func MetricsHandler(res http.ResponseWriter, req *http.Request) {
-	fmt.Println(DefaultStorage)
-	for _, m := range DefaultStorage.Counters {
-		fmt.Println(m.Get())
+var (
+	ErrNoMetricName = util.StatusErr{
+		Status:  http.StatusNotFound,
+		Message: "No metric name",
 	}
-	for _, m := range DefaultStorage.Gauges {
-		fmt.Println(m.Get())
+	ErrInvalidValue = util.StatusErr{
+		Status:  http.StatusBadRequest,
+		Message: "Unexpected metric value",
 	}
+	ErrUnknownMetricType = util.StatusErr{
+		Status:  http.StatusNotImplemented,
+		Message: "Incorrect metric type",
+	}
+)
+
+func UpdateHandler(res http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
-		http.Error(res, "Unexpected method", http.StatusMethodNotAllowed)
+		http.Error(res, "unexpected method", http.StatusMethodNotAllowed)
 	}
-	if req.Header.Get("Content-Type") != "text/plain" {
-		http.Error(res, "Unexpected content-type should be text/plain", http.StatusUnsupportedMediaType)
+	URLParts := make([]string, 3, 3)
+	k := 0
+	for _, el := range strings.Split(req.RequestURI, "/") {
+		if el != "" && el != "update" {
+			URLParts[k] = el
+			k += 1
+		}
 	}
-	re, err := regexp.Compile("/update/(?P<Type>gauge|counter)/(?P<Name>[a-zA-Z]+)/(?P<Value>[0-9]+)")
-	if err != nil {
-		http.Error(res, "Internal error", http.StatusInternalServerError)
+	metricType, metricName, metricValue := URLParts[0], URLParts[1], URLParts[2]
+	var statErr util.StatusErr
+	if err := metricTypeHandle(metricType, metricName, metricValue); err != nil && errors.As(err, &statErr) {
+		http.Error(res, statErr.Message, statErr.Status)
 		return
-	}
-	matches := re.FindStringSubmatch(req.RequestURI)
-	if len(matches)-1 < 3 {
-		http.Error(res, "Incorrect URL", http.StatusUnprocessableEntity)
-		return
-	}
-	metricType, metricName, metricValue := matches[1], matches[2], matches[3]
-	if err := metricTypeHandle(metricType, metricName, metricValue); err != nil {
-		http.Error(res, err.Error(), http.StatusUnprocessableEntity)
 	}
 }
 
@@ -45,11 +50,14 @@ func metricTypeHandle(metricType string, metricName string, metricValue string) 
 	case "counter":
 		return counterHandle(metricName, metricValue)
 	default:
-		return nil
+		return ErrUnknownMetricType
 	}
 }
 
 func gaugeHandle(metricName string, metricValue string) error {
+	if metricName == "" {
+		return ErrNoMetricName
+	}
 	var m Metric
 	if v, ok := DefaultStorage.Gauges[metricName]; !ok {
 		m = new(Gauge)
@@ -58,7 +66,7 @@ func gaugeHandle(metricName string, metricValue string) error {
 	}
 	g, err := strconv.ParseFloat(metricValue, 64)
 	if err != nil {
-		return errors.New("Unexpected value")
+		return ErrInvalidValue
 	}
 	m.Update(g)
 	DefaultStorage.Gauges[metricName] = m
@@ -66,6 +74,9 @@ func gaugeHandle(metricName string, metricValue string) error {
 }
 
 func counterHandle(metricName string, metricValue string) error {
+	if metricName == "" {
+		return ErrNoMetricName
+	}
 	var m Metric
 	if v, ok := DefaultStorage.Counters[metricName]; !ok {
 		m = new(Counter)
@@ -74,7 +85,7 @@ func counterHandle(metricName string, metricValue string) error {
 	}
 	g, err := strconv.ParseInt(metricValue, 10, 64)
 	if err != nil {
-		return errors.New("Unexpected value")
+		return ErrInvalidValue
 	}
 	m.Update(g)
 	DefaultStorage.Counters[metricName] = m

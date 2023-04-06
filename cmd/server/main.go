@@ -8,9 +8,8 @@ import (
 
 func main() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/update/", metrics.MetricsHandler)
+	mux.HandleFunc("/update/", metrics.UpdateHandler)
 	if err := http.ListenAndServe("localhost:8080", mux); err != nil {
 		log.Panic(err)
 	}
-
 }
